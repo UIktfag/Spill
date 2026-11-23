@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Face Reflex — Head Control</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080d18;color:#eef5ff;font-family:system-ui,Arial;text-align:center;padding:18px}
+h1{color:#65f2c5;letter-spacing:2px;margin:8px}p{color:#a9b8cf}
+#hud{display:flex;justify-content:center;gap:22px;flex-wrap:wrap;margin:12px;font-size:18px}
+#arena{width:min(94vw,700px);height:430px;margin:12px auto;position:relative;overflow:hidden;border:2px solid #2b405d;border-radius:18px;background:radial-gradient(#1b2a42,#0c1423)}
+#face{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:68px;transition:left .15s,top .15s;z-index:2}
+.warning{position:absolute;font-size:50px;z-index:3;animation:blink .24s infinite alternate;filter:drop-shadow(0 0 12px #ffb000)}
+@keyframes blink{to{opacity:.2;transform:translate(-50%,-50%) scale(1.3)}}
+.projectile{position:absolute;font-size:42px;z-index:4}.status{min-height:28px;font-weight:600}
+button{border:0;border-radius:11px;padding:12px 22px;background:#65f2c5;color:#08140f;font-weight:bold;font-size:16px;cursor:pointer;margin:6px}
+#camera{width:220px;max-width:90vw;border-radius:12px;border:1px solid #324968}#labels{font-size:13px;color:#a9b8cf}
+</style></head><body>
+<h1>⚡ FACE REFLEX</h1><p>Beveg hodet kun til venstre eller høyre for å dodge angrep. Ett liv!</p>
+<div id="hud"><span>⏱️ <b id="score">0.0</b>s</span><span>🔥 Level <b id="level">1</b></span><span>❤️ <b>1</b></span></div>
+<div id="arena"><div id="face">😐</div></div><div class="status" id="status">Start spillet og se etter det blinkende ❗</div>
+<button id="start" onclick="startGame()">START SPILL</button>
+<p><b>Webkamera / Pose-modell</b></p><button onclick="startCamera()">START KAMERA</button><br><canvas id="canvas"></canvas><div id="labels"></div>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+<script>
+const MODEL_URL='https://teachablemachine.withgoogle.com/models/G2K1RLIYj/';
+let model, webcam, maxPredictions, cameraOn=false, raf;
+const arena=document.getElementById('arena'), face=document.getElementById('face'), statusEl=document.getElementById('status');
+let playing=false, phase='idle', attackFrom='', required='', score=0, level=1, started=0;
+let warningTimer=null, nextTimer=null, scoreRAF=null, lastClass='', classSince=0, acted=false;
+const positions={
+ left:{warnX:'8%',warnY:'50%',faceX:'78%',faceY:'50%',attackX:'8%',attackY:'50%'},
+ right:{warnX:'92%',warnY:'50%',faceX:'22%',faceY:'50%',attackX:'92%',attackY:'50%'}
+};
+function clearTimers(){clearTimeout(warningTimer);clearTimeout(nextTimer);cancelAnimationFrame(scoreRAF);}
+function startGame(){clearTimers();arena.querySelectorAll('.warning,.projectile').forEach(x=>x.remove());playing=true;phase='idle';score=0;level=1;started=performance.now();acted=false;face.textContent='😐';resetFace();document.getElementById('score').textContent='0.0';document.getElementById('level').textContent='1';statusEl.textContent='Gjør deg klar…';tickScore();scheduleAttack(1100);}
+function resetFace(){face.style.left='50%';face.style.top='50%';}
+function tickScore(){if(!playing)return;score=(performance.now()-started)/1000;level=Math.floor(score/12)+1;document.getElementById('score').textContent=score.toFixed(1);document.getElementById('level').textContent=level;scoreRAF=requestAnimationFrame(tickScore);}
+function scheduleAttack(ms){if(playing)nextTimer=setTimeout(showWarning,ms);}
+function showWarning(){if(!playing)return;phase='warning';acted=false;const choices=['left','right'];attackFrom=choices[Math.floor(Math.random()*choices.length)];required=({left:'right',right:'left'})[attackFrom];const p=positions[attackFrom];const marker=document.createElement('div');marker.className='warning';marker.textContent='❗';marker.style.left=p.warnX;marker.style.top=p.warnY;marker.style.transform='translate(-50%,-50%)';arena.appendChild(marker);statusEl.textContent='DODGE SIDEVEIS! Beveg hodet motsatt av varselet!';const windowMs=Math.max(520,1450-level*65);warningTimer=setTimeout(()=>{if(playing&&phase==='warning')gameOver('For sen reaksjon!');},windowMs);}
+function dodge(dir){if(!playing||phase!=='warning'||acted)return;acted=true;if(dir!==required){gameOver('Feil dodge!');return;}clearTimeout(warningTimer);phase='dodged';arena.querySelectorAll('.warning').forEach(x=>x.remove());const p=positions[dir];face.style.left=p.faceX;face.style.top=p.faceY;face.textContent='😎';statusEl.textContent='Unngikk angrepet!';const proj=document.createElement('div');proj.className='projectile';proj.textContent='💥';proj.style.left=positions[attackFrom].attackX;proj.style.top=positions[attackFrom].attackY;proj.style.transform='translate(-50%,-50%)';arena.appendChild(proj);setTimeout(()=>proj.remove(),350);nextTimer=setTimeout(()=>{if(!playing)return;resetFace();face.textContent='😐';phase='idle';statusEl.textContent='Se etter neste varsel…';scheduleAttack(Math.max(320,950-level*58));},450);}
+function gameOver(msg){if(!playing)return;playing=false;phase='dead';clearTimers();arena.querySelectorAll('.warning,.projectile').forEach(x=>x.remove());face.textContent='😵';resetFace();statusEl.textContent='GAME OVER — '+msg+' Du overlevde '+score.toFixed(1)+' sekunder. Trykk Start spill for å prøve igjen.';}
+function normLabel(s){return s.trim().toLowerCase();}
+function mapLabel(label){const s=normLabel(label);if(s==='høyre'||s==='hoyre')return 'right';if(s==='venstre')return 'left';return 'neutral';}
+function onPoseClass(label,prob){const mapped=mapLabel(label);if(mapped==='neutral'||prob<0.88)return;dodge(mapped);}
+async function startCamera(){if(cameraOn)return;statusEl.textContent='Laster modellen og starter kamera…';try{model=await tmPose.load(MODEL_URL+'model.json',MODEL_URL+'metadata.json');maxPredictions=model.getTotalClasses();webcam=new tmPose.Webcam(320,240,true);await webcam.setup();await webcam.play();cameraOn=true;const canvas=document.getElementById('canvas');canvas.width=320;canvas.height=240;const ctx=canvas.getContext('2d');const labels=document.getElementById('labels');labels.innerHTML='';for(let i=0;i<maxPredictions;i++)labels.appendChild(document.createElement('div'));cameraLoop(ctx);statusEl.textContent='Kamera aktiv! Start spillet når du er klar.';}catch(err){statusEl.textContent='Kunne ikke starte kamera/modell: '+err.message;}}
+async function cameraLoop(ctx){if(!cameraOn)return;webcam.update();const {pose,posenetOutput}=await model.estimatePose(webcam.canvas);const predictions=await model.predict(posenetOutput);let best=predictions.reduce((a,b)=>b.probability>a.probability?b:a);for(let i=0;i<predictions.length;i++){document.getElementById('labels').children[i].textContent=predictions[i].className+': '+predictions[i].probability.toFixed(2);}
+// Require a confident pose to persist briefly to avoid jitter/accidental inputs
+const mapped=mapLabel(best.className);const now=performance.now();if(mapped!==lastClass){lastClass=mapped;classSince=now;}if(mapped!=='neutral'&&best.probability>=0.88&&now-classSince>=120){onPoseClass(best.className,best.probability);lastClass='neutral';classSince=now;}
+ctx.drawImage(webcam.canvas,0,0);if(pose){tmPose.drawKeypoints(pose.keypoints,0.5,ctx);tmPose.drawSkeleton(pose.keypoints,0.5,ctx);}raf=requestAnimationFrame(()=>cameraLoop(ctx));}
+</script></body></html>
